@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>月经记录 + 预测（本地版）</title>
+<style>
+  :root{
+    --bg:#ffffff; --card:#ffffff; --muted:#7c847d; --text:#2f3a33; --accent:#d2a889;
+    --red:#c97b7b; --green:#9bb39c; --yellow:#d9c48c; --blue:#92a8a2; --orange:#d2a889;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
+  .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
+  .grid{display:grid;gap:16px}
+  @media(min-width:900px){.grid{grid-template-columns:330px 1fr}}
+  .card{background:var(--card);border:1px solid rgba(0,0,0,.06);border-radius:16px;box-shadow:0 6px 20px rgba(0,0,0,.06)}
+  .card h2{margin:0 0 8px;font-size:18px;color:var(--accent)}
+  .card .inner{padding:16px}
+  label{display:block;margin:10px 0 6px;color:var(--accent)}
+  input,select,button,textarea{font:inherit}
+  input[type="date"],select,textarea{
+    width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(0,0,0,.12);
+    background:#ffffff;color:var(--text);outline:none
+  }
+  input::placeholder,textarea::placeholder{color:#9e9e9e}
+  .row{display:flex;gap:10px}
+  .row>*{flex:1}
+  button{cursor:pointer;padding:10px 14px;border-radius:10px;border:1px solid var(--accent);
+    background:#ffffff;color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+  button.ghost{background:transparent;border-color:var(--accent);color:var(--accent)}
+  .muted{color:var(--muted)}
+  .tag{display:inline-block;padding:3px 8px;border-radius:999px;font-size:12px;border:1px solid rgba(0,0,0,.12)}
+  .kpi{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .kpi .item{padding:12px;border-radius:12px;background:#f9f9f9;border:1px solid rgba(0,0,0,.06)}
+  .kpi .item b{font-size:18px;color:var(--accent)}
+
+  /* Calendar */
+  .cal{padding:10px}
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;color:var(--accent)}
+  .cal-head .ctrls{display:flex;gap:8px}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .dow{font-size:12px;text-align:center;color:var(--muted);margin:4px 0}
+  .cell{min-height:74px;border-radius:12px;padding:6px;border:1px solid rgba(0,0,0,.06);background:#fff;position:relative}
+  .cell .d{position:absolute;top:6px;right:8px;font-size:12px;color:var(--muted)}
+  .cell.today{outline:2px solid var(--accent)}
+  .cell .mark{position:absolute;left:6px;bottom:6px;font-size:10px;padding:3px 6px;border-radius:6px;color:#fff;font-weight:700}
+  .m{background:var(--red)} /* Menstrual */
+  .f{background:var(--green)} /* Fertile */
+  .o{background:var(--yellow);color:#2f3a33} /* Ovulation */
+  .l{background:var(--orange)} /* Luteal */
+  .pred{outline:1px dashed rgba(0,0,0,.25)}
+
+  .list{max-height:260px;overflow:auto;border-top:1px solid rgba(0,0,0,.06)}
+  .list .rowi{display:flex;justify-content:space-between;padding:10px 16px;border-bottom:1px solid rgba(0,0,0,.06)}
+  .warn{background:#fdeaea;border-left:4px solid var(--red);padding:10px;border-radius:10px}
+  .info{background:#fff6f0;border-left:4px solid var(--accent);padding:10px;border-radius:10px}
+  .ok{background:#f9f9f9;border-left:4px solid var(--green);padding:10px;border-radius:10px}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 16px;color:var(--accent)">
+      <span>月经记录 + 预测（本地离线版）</span>
+      <span class="tag">隐私：仅存浏览器本地</span>
+    </h1>
+
+    <div class="grid">
+      <!-- 左侧：表单与统计 -->
+      <section class="card">
+        <div class="inner">
+          <h2>快速记录</h2>
+          <p class="muted" style="margin-top:0">请填写每次月经的开始与结束日期，系统会自动计算经期长度。</p>
+          <div class="row">
+            <div>
+              <label>月经开始日期</label>
+              <input id="startDate" type="date" />
+            </div>
+            <div>
+              <label>月经结束日期</label>
+              <input id="endDate" type="date" />
+            </div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="primary" id="btnAdd">添加记录</button>
+            <button class="ghost" id="btnClear">清空所有</button>
+          </div>
+
+          <hr style="border:none;border-top:1px solid rgba(0,0,0,.06);margin:16px 0"/>
+
+          <h2>统计与预测</h2>
+          <div class="kpi">
+            <div class="item"><div class="muted">记录周期数</div><b id="kCycles">0</b></div>
+            <div class="item"><div class="muted">平均周期（天）</div><b id="kAvg">—</b></div>
+            <div class="item"><div class="muted">下次月经预计</div><b id="kNext">—</b></div>
+            <div class="item"><div class="muted">易孕窗口</div><b id="kFertile">—</b></div>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+            <button id="btnExport">导出数据</button>
+            <input type="file" id="fileImport" accept="application/json" style="display:none"/>
+            <button id="btnImport">导入数据</button>
+          </div>
+
+          <div style="margin-top:14px" class="info">
+            <b>提示</b>：预测基于平均周期与固定黄体期14天，仅供参考，勿作为避孕依据。如周期明显异常或伴随疼痛不适，请及时就医。
+          </div>
+        </div>
+        <div class="list" id="history"></div>
+      </section>
+
+      <!-- 右侧：日历 -->
+      <section class="card cal">
+        <div class="cal-head">
+          <div style="font-weight:700" id="calTitle">—</div>
+          <div class="ctrls">
+            <button id="prevM">上个月</button>
+            <button id="todayM">今天</button>
+            <button id="nextM">下个月</button>
+          </div>
+        </div>
+        <div class="cal-grid" id="dow"></div>
+        <div class="cal-grid" id="cal"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap" class="muted">
+          <span class="tag" style="border-color:transparent;background:var(--red);color:#fff">月经期</span>
+          <span class="tag" style="border-color:transparent;background:var(--green);color:#fff">易孕期</span>
+          <span class="tag" style="border-color:transparent;background:var(--yellow);color:#2f3a33">排卵日</span>
+          <span class="tag" style="border-color:transparent;background:var(--orange);color:#fff">黄体期</span>
+          <span class="tag" style="color:var(--accent)">虚线：预测</span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+<script>
+// 统一的数据结构：[{ start: 'YYYY-MM-DD', end: 'YYYY-MM-DD', periodLen: number }]
+let data = [];
+try{ data = JSON.parse(localStorage.getItem('periodData')||'[]') }catch(e){ data = [] }
+
+// ---------- 工具函数 ----------
+const fmt = d => d.toISOString().slice(0,10);
+const parse = s => { const d = new Date(s); d.setHours(12); return d };
+const addDays = (d,n)=>{ const x=new Date(d); x.setDate(x.getDate()+n); return x };
+const daysBetween = (a,b)=> Math.round((parse(b)-parse(a))/86400000);
+
+function save(){ localStorage.setItem('periodData', JSON.stringify(data)); }
+function sortByStart(){ data.sort((a,b)=> a.start.localeCompare(b.start)) }
+
+// ---------- 统计与预测 ----------
+function getCycleLengths(){
+  sortByStart();
+  const res=[]; for(let i=1;i<data.length;i++){ res.push(daysBetween(data[i-1].start, data[i].start)); }
+  return res;
+}
+function avg(arr){ return arr.length? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : null }
+function getAvgCycle(){ return avg(getCycleLengths()) }
+function getLast(){ sortByStart(); return data.length? data[data.length-1] : null }
+
+function getPredictions(){
+  const last = getLast();
+  if(!last) return { next:null, ovulation:null, fertile:null, windows:[] };
+  const avgC = getAvgCycle() || 28;
+  const pLen = last.periodLen || 5;
+
+  const nextStart = addDays(parse(last.start), avgC);
+  const ovulation = addDays(nextStart, -14);
+  const fertile = [ addDays(ovulation,-5), addDays(ovulation,1) ];
+
+  // 构造可视化窗口：把历史周期与下一个预测周期拼一起
+  const windows=[];
+  const records = [...data.map(r=>({ start: parse(r.start), end: parse(r.end||r.start), pLen: r.periodLen||5, pred:false }))];
+  records.push({ start: parse(fmt(nextStart)), end: addDays(parse(fmt(nextStart)), pLen-1), pLen, pred:true });
+
+  for(let i=0;i<records.length;i++){
+    const cur = records[i];
+    const nextS = records[i+1]? records[i+1].start : addDays(cur.start, avgC);
+    const ovu = addDays(nextS, -14);
+    // 月经期：按实际 end 或 pLen 计算
+    windows.push({ from: cur.start, to: cur.end || addDays(cur.start, (cur.pLen||5)-1), type:'m', pred:cur.pred });
+    // 易孕期 + 排卵日
+    windows.push({ from: addDays(ovu,-5), to: addDays(ovu,1), type:'f', pred:cur.pred });
+    windows.push({ from: ovu, to: ovu, type:'o', pred:cur.pred });
+    // 黄体期
+    windows.push({ from: addDays(ovu,2), to: addDays(nextS,-1), type:'l', pred:cur.pred });
+  }
+  return { next: nextStart, ovulation, fertile, windows };
+}
+
+// ---------- 渲染：历史、KPI、日历 ----------
+function renderHistory(){
+  const el = document.getElementById('history');
+  sortByStart();
+  if(!data.length){ el.innerHTML = '<div class="ok" style="margin:12px">暂无记录。先在左侧添加一条开始/结束日期。</div>'; return; }
+  el.innerHTML = data.map((r,i)=>{
+    const prev = data[i-1];
+    const cyc = prev? daysBetween(prev.start, r.start) : '—';
+    return `<div class="rowi"><span><b>${r.start}</b> ~ ${r.end||'-'}</span><span>${r.periodLen||'-'}天 · 周期 ${cyc}天</span></div>`
+  }).join('');
+}
+
+function renderKPIs(){
+  const cycles = getCycleLengths();
+  const avgC = getAvgCycle();
+  const pred = getPredictions();
+  document.getElementById('kCycles').textContent = cycles.length;
+  document.getElementById('kAvg').textContent = avgC? avgC+' 天' : '—';
+  document.getElementById('kNext').textContent = pred.next? fmt(pred.next) : '—';
+  document.getElementById('kFertile').textContent = pred.fertile? `${fmt(pred.fertile[0])} ~ ${fmt(pred.fertile[1])}` : '—';
+}
+
+function ensureDow(){
+  const dowEl = document.getElementById('dow');
+  if(dowEl.dataset.done) return;
+  ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach((d)=>{
+    const el=document.createElement('div'); el.className='dow'; el.textContent=d; dowEl.appendChild(el);
+  });
+  dowEl.dataset.done = '1';
+}
+
+function renderCalendar(){
+  ensureDow();
+  const calEl = document.getElementById('cal');
+  calEl.innerHTML='';
+  const view = window.__viewDate || new Date();
+  const cur = new Date(view); cur.setDate(1); cur.setHours(12);
+  const year=cur.getFullYear(), month=cur.getMonth();
+  document.getElementById('calTitle').textContent = `${year}年 ${month+1}月`;
+
+  const startIdx = (cur.getDay()+6)%7; // 周一开头
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const today = new Date(); today.setHours(12);
+
+  const ranges = getPredictions().windows;
+  const sDay = d => { const x=new Date(d); x.setHours(12); return x };
+  function flagsForDate(d){
+    const res=[];
+    for(const w of ranges){ if(d>=sDay(w.from) && d<=sDay(w.to)){ if(w.type==='fol') continue; res.push({type:w.type, pred:w.pred}); } }
+    return res;
+  }
+
+  for(let i=0;i<startIdx;i++){ calEl.appendChild(document.createElement('div')); }
+
+  for(let d=1; d<=daysInMonth; d++){
+    const cell=document.createElement('div'); cell.className='cell';
+    const dd = new Date(year, month, d); dd.setHours(12);
+    const dstr = fmt(dd);
+    if(fmt(today)===dstr) cell.classList.add('today');
+    const num=document.createElement('div'); num.className='d'; num.textContent=d; cell.appendChild(num);
+    const flags = flagsForDate(dd);
+    flags.forEach(f=>{
+      const tag=document.createElement('div');
+      tag.className = 'mark ' + (f.type==='m'?'m': f.type==='f'?'f': f.type==='o'?'o':'l');
+      tag.textContent = f.type==='m'?'月经': f.type==='f'?'易孕': f.type==='o'?'排卵':'黄体';
+      if(f.pred) cell.classList.add('pred');
+      cell.appendChild(tag);
+    });
+    calEl.appendChild(cell);
+  }
+}
+
+function renderAll(){ renderHistory(); renderKPIs(); renderCalendar(); }
+
+// ---------- 事件 ----------
+document.getElementById('btnAdd').onclick = () => {
+  const start = document.getElementById('startDate').value;
+  const end = document.getElementById('endDate').value;
+  if(!start||!end) return alert('请填写完整的开始和结束日期');
+  const s = parse(start), e = parse(end);
+  if(e < s) return alert('结束日期不能早于开始日期');
+  const len = daysBetween(start, end) + 1;
+  data.push({start, end, periodLen: len});
+  save(); renderAll();
+  document.getElementById('startDate').value='';
+  document.getElementById('endDate').value='';
+};
+
+document.getElementById('btnClear').onclick = () => { if(confirm('确定清空所有记录？')){ data=[]; save(); renderAll(); } };
+
+document.getElementById('btnImport').onclick = () => document.getElementById('fileImport').click();
+document.getElementById('fileImport').addEventListener('change', (e)=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader(); r.onload=()=>{
+    try{
+      const incoming = JSON.parse(r.result);
+      if(!Array.isArray(incoming)) throw new Error('JSON 须为数组');
+      for(const it of incoming){ if(!it.start||!it.end) throw new Error('缺少 start/end'); }
+      data = incoming.map(it=>({ start: it.start, end: it.end, periodLen: it.periodLen || (daysBetween(it.start,it.end)+1) }));
+      save(); renderAll();
+    }catch(err){ alert('导入失败：'+err.message) }
+  }; r.readAsText(f);
+});
+
+document.getElementById('btnExport').onclick = () => {
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='period-data.json'; a.click();
+};
+
+// 日历月份切换
+window.__viewDate = new Date();
+document.getElementById('prevM').onclick = ()=>{ window.__viewDate.setMonth(window.__viewDate.getMonth()-1); renderCalendar(); };
+document.getElementById('nextM').onclick = ()=>{ window.__viewDate.setMonth(window.__viewDate.getMonth()+1); renderCalendar(); };
+document.getElementById('todayM').onclick = ()=>{ window.__viewDate = new Date(); renderCalendar(); };
+
+// 初始渲染
+renderAll();
+</script>
+</body>
+</html>
